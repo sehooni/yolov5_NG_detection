@@ -1,27 +1,27 @@
 # YOLOv5 🚀 by Ultralytics, GPL-3.0 license
 """
-Run YOLOv5 detection inference on images, videos, directories, streams, etc.
+Run inference on images, videos, directories, streams, etc.
 
 Usage - sources:
-    $ python detect.py --weights yolov5s.pt --source 0                               # webcam
-                                                     img.jpg                         # image
-                                                     vid.mp4                         # video
-                                                     path/                           # directory
-                                                     'path/*.jpg'                    # glob
-                                                     'https://youtu.be/Zgi9g1ksQHc'  # YouTube
-                                                     'rtsp://example.com/media.mp4'  # RTSP, RTMP, HTTP stream
+    $ python path/to/detect.py --weights yolov5s.pt --source 0              # webcam
+                                                             img.jpg        # image
+                                                             vid.mp4        # video
+                                                             path/          # directory
+                                                             path/*.jpg     # glob
+                                                             'https://youtu.be/Zgi9g1ksQHc'  # YouTube
+                                                             'rtsp://example.com/media.mp4'  # RTSP, RTMP, HTTP stream
 
 Usage - formats:
-    $ python detect.py --weights yolov5s.pt                 # PyTorch
-                                 yolov5s.torchscript        # TorchScript
-                                 yolov5s.onnx               # ONNX Runtime or OpenCV DNN with --dnn
-                                 yolov5s.xml                # OpenVINO
-                                 yolov5s.engine             # TensorRT
-                                 yolov5s.mlmodel            # CoreML (macOS-only)
-                                 yolov5s_saved_model        # TensorFlow SavedModel
-                                 yolov5s.pb                 # TensorFlow GraphDef
-                                 yolov5s.tflite             # TensorFlow Lite
-                                 yolov5s_edgetpu.tflite     # TensorFlow Edge TPU
+    $ python path/to/detect.py --weights yolov5s.pt                 # PyTorch
+                                         yolov5s.torchscript        # TorchScript
+                                         yolov5s.onnx               # ONNX Runtime or OpenCV DNN with --dnn
+                                         yolov5s.xml                # OpenVINO
+                                         yolov5s.engine             # TensorRT
+                                         yolov5s.mlmodel            # CoreML (macOS-only)
+                                         yolov5s_saved_model        # TensorFlow SavedModel
+                                         yolov5s.pb                 # TensorFlow GraphDef
+                                         yolov5s.tflite             # TensorFlow Lite
+                                         yolov5s_edgetpu.tflite     # TensorFlow Edge TPU
 """
 
 import argparse
@@ -41,18 +41,18 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.common import DetectMultiBackend
 from utils.dataloaders import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
-from utils.general import (LOGGER, Profile, check_file, check_img_size, check_imshow, check_requirements, colorstr, cv2,
+from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr, cv2,
                            increment_path, non_max_suppression, print_args, scale_coords, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
-from utils.torch_utils import select_device, smart_inference_mode
+from utils.torch_utils import select_device, smart_inference_mode, time_sync
 
 
 @smart_inference_mode()
 def run(
-        weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
-        source=ROOT / 'data/images',  # file/dir/URL/glob, 0 for webcam
-        data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
-        imgsz=(640, 640),  # inference size (height, width)
+        weights=ROOT / 'data/best1024.pt',  # model.pt path(s)
+        source=ROOT / '0',  # file/dir/URL/glob, 0 for webcam
+        data=ROOT / 'data/ng_1024/data.yaml',  # dataset.yaml path
+        imgsz=(1024, 1024),  # inference size (height, width)
         conf_thres=0.25,  # confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
@@ -107,23 +107,26 @@ def run(
 
     # Run inference
     model.warmup(imgsz=(1 if pt else bs, 3, *imgsz))  # warmup
-    seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
+    seen, windows, dt = 0, [], [0.0, 0.0, 0.0]
     for path, im, im0s, vid_cap, s in dataset:
-        with dt[0]:
-            im = torch.from_numpy(im).to(device)
-            im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
-            im /= 255  # 0 - 255 to 0.0 - 1.0
-            if len(im.shape) == 3:
-                im = im[None]  # expand for batch dim
+        t1 = time_sync()
+        im = torch.from_numpy(im).to(device)
+        im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
+        im /= 255  # 0 - 255 to 0.0 - 1.0
+        if len(im.shape) == 3:
+            im = im[None]  # expand for batch dim
+        t2 = time_sync()
+        dt[0] += t2 - t1
 
         # Inference
-        with dt[1]:
-            visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
-            pred = model(im, augment=augment, visualize=visualize)
+        visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
+        pred = model(im, augment=augment, visualize=visualize)
+        t3 = time_sync()
+        dt[1] += t3 - t2
 
         # NMS
-        with dt[2]:
-            pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
+        pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
+        dt[2] += time_sync() - t3
 
         # Second-stage classifier (optional)
         # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
@@ -198,10 +201,10 @@ def run(
                     vid_writer[i].write(im0)
 
         # Print time (inference-only)
-        LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
+        LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
 
     # Print results
-    t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
+    t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
     LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {(1, 3, *imgsz)}' % t)
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
@@ -212,10 +215,10 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model path(s)')
-    parser.add_argument('--source', type=str, default=ROOT / 'data/images', help='file/dir/URL/glob, 0 for webcam')
-    parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='(optional) dataset.yaml path')
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
+    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'data/best1024.pt', help='model path(s)')
+    parser.add_argument('--source', type=str, default=ROOT / '0', help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/ng_1024/data.yaml', help='(optional) dataset.yaml path')
+    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[1024], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
@@ -233,7 +236,7 @@ def parse_opt():
     parser.add_argument('--project', default=ROOT / 'runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--line-thickness', default=3, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--line-thickness', default=1, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
