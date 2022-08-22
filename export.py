@@ -21,19 +21,19 @@ Requirements:
     $ pip install -r requirements.txt coremltools onnx onnx-simplifier onnxruntime-gpu openvino-dev tensorflow  # GPU
 
 Usage:
-    $ python export.py --weights yolov5s.pt --include torchscript onnx openvino engine coreml tflite ...
+    $ python path/to/export.py --weights yolov5s.pt --include torchscript onnx openvino engine coreml tflite ...
 
 Inference:
-    $ python detect.py --weights yolov5s.pt                 # PyTorch
-                                 yolov5s.torchscript        # TorchScript
-                                 yolov5s.onnx               # ONNX Runtime or OpenCV DNN with --dnn
-                                 yolov5s.xml                # OpenVINO
-                                 yolov5s.engine             # TensorRT
-                                 yolov5s.mlmodel            # CoreML (macOS-only)
-                                 yolov5s_saved_model        # TensorFlow SavedModel
-                                 yolov5s.pb                 # TensorFlow GraphDef
-                                 yolov5s.tflite             # TensorFlow Lite
-                                 yolov5s_edgetpu.tflite     # TensorFlow Edge TPU
+    $ python path/to/detect.py --weights yolov5s.pt                 # PyTorch
+                                         yolov5s.torchscript        # TorchScript
+                                         yolov5s.onnx               # ONNX Runtime or OpenCV DNN with --dnn
+                                         yolov5s.xml                # OpenVINO
+                                         yolov5s.engine             # TensorRT
+                                         yolov5s.mlmodel            # CoreML (macOS-only)
+                                         yolov5s_saved_model        # TensorFlow SavedModel
+                                         yolov5s.pb                 # TensorFlow GraphDef
+                                         yolov5s.tflite             # TensorFlow Lite
+                                         yolov5s_edgetpu.tflite     # TensorFlow Edge TPU
 
 TensorFlow.js:
     $ cd .. && git clone https://github.com/zldrobit/tfjs-yolov5-example.git && cd tfjs-yolov5-example
@@ -436,7 +436,8 @@ def export_tfjs(file, prefix=colorstr('TensorFlow.js:')):
               f'--output_node_names=Identity,Identity_1,Identity_2,Identity_3 {f_pb} {f}'
         subprocess.run(cmd.split())
 
-        json = Path(f_json).read_text()
+        with open(f_json) as j:
+            json = j.read()
         with open(f_json, 'w') as j:  # sort JSON Identity_* in ascending order
             subst = re.sub(
                 r'{"outputs": {"Identity.?.?": {"name": "Identity.?.?"}, '
@@ -494,9 +495,11 @@ def run(
         assert device.type != 'cpu' or coreml, '--half only compatible with GPU export, i.e. use --device 0'
         assert not dynamic, '--half not compatible with --dynamic, i.e. use either --half or --dynamic but not both'
     model = attempt_load(weights, device=device, inplace=True, fuse=True)  # load FP32 model
+    nc, names = model.nc, model.names  # number of classes, class names
 
     # Checks
     imgsz *= 2 if len(imgsz) == 1 else 1  # expand
+    assert nc == len(names), f'Model class count {nc} != len(names) {len(names)}'
     if optimize:
         assert device.type == 'cpu', '--optimize not compatible with cuda devices, i.e. use --device cpu'
 
@@ -517,7 +520,7 @@ def run(
         y = model(im)  # dry runs
     if half and not coreml:
         im, model = im.half(), model.half()  # to FP16
-    shape = tuple((y[0] if isinstance(y, tuple) else y).shape)  # model output shape
+    shape = tuple(y[0].shape)  # model output shape
     LOGGER.info(f"\n{colorstr('PyTorch:')} starting from {file} with output shape {shape} ({file_size(file):.1f} MB)")
 
     # Exports
@@ -598,7 +601,7 @@ def parse_opt():
     parser.add_argument('--conf-thres', type=float, default=0.25, help='TF.js NMS: confidence threshold')
     parser.add_argument('--include',
                         nargs='+',
-                        default=['torchscript'],
+                        default=['torchscript', 'onnx'],
                         help='torchscript, onnx, openvino, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs')
     opt = parser.parse_args()
     print_args(vars(opt))

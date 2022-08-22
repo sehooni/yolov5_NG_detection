@@ -7,7 +7,7 @@ Usage:
     $ python models/tf.py --weights yolov5s.pt
 
 Export:
-    $ python export.py --weights yolov5s.pt --include saved_model pb tflite tfjs
+    $ python path/to/export.py --weights yolov5s.pt --include saved_model pb tflite tfjs
 """
 
 import argparse
@@ -272,7 +272,7 @@ class TFSPPF(keras.layers.Layer):
 
 class TFDetect(keras.layers.Layer):
     # TF YOLOv5 Detect layer
-    def __init__(self, nc=80, anchors=(), ch=(), imgsz=(640, 640), w=None):  # detection layer
+    def __init__(self, nc=80, anchors=(), ch=(), imgsz=(3264, 2448), w=None):  # detection layer
         super().__init__()
         self.stride = tf.convert_to_tensor(w.stride.numpy(), dtype=tf.float32)
         self.nc = nc  # number of classes
@@ -402,7 +402,7 @@ def parse_model(d, ch, model, imgsz):  # model_dict, input_channels(3)
 
 class TFModel:
     # TF YOLOv5 model
-    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, model=None, imgsz=(640, 640)):  # model, channels, classes
+    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, model=None, imgsz=(3264, 2448)):  # model, channels, classes
         super().__init__()
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
@@ -530,7 +530,7 @@ def representative_dataset_gen(dataset, ncalib=100):
 
 def run(
         weights=ROOT / 'yolov5s.pt',  # weights path
-        imgsz=(640, 640),  # inference size h,w
+        imgsz=(3264, 2448),  # inference size h,w
         batch_size=1,  # batch size
         dynamic=False,  # dynamic batch size
 ):
